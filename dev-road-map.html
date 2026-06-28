@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cuddly System - PWA Next Steps</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 font-sans antialiased p-6 md:p-12">
+
+<div class="max-w-4xl mx-auto space-y-8">
+
+    <!-- Header -->
+    <header class="border-b border-gray-700 pb-6">
+        <h1 class="text-4xl font-bold text-blue-400 mb-2">Cuddly System 🚀</h1>
+        <p class="text-xl text-gray-400">PWA Development Roadmap & Next Steps</p>
+    </header>
+
+    <!-- Phase 1 -->
+    <section class="bg-gray-800 p-6 rounded-lg shadow-lg">
+        <h2 class="text-2xl font-semibold text-green-400 mb-4">Phase 1: Database Setup (Supabase)</h2>
+        <p class="mb-4 text-gray-300">Before building the UI, we need a place to store your data. Supabase is the best choice since it uses PostgreSQL and integrates perfectly with Next.js.</p>
+        <ol class="list-decimal list-inside space-y-2 text-gray-300">
+            <li>Go to <a href="https://supabase.com/" class="text-blue-400 hover:underline" target="_blank">Supabase</a> and create a free project.</li>
+            <li>Run this SQL command in their SQL Editor to create your first table for tracking morning weight and sleep:</li>
+        </ol>
+        <pre class="bg-gray-950 p-4 rounded mt-4 overflow-x-auto text-sm text-green-300">
+CREATE TABLE daily_metrics (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    date DATE UNIQUE NOT NULL,
+    weight_kg DECIMAL(5,2),
+    sleep_hours DECIMAL(4,2),
+    fasting_hours DECIMAL(4,2),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);</pre>
+        <p class="mt-4 text-sm text-gray-400">Next, install the Supabase client in your repo: <code class="bg-gray-700 px-2 py-1 rounded">npm install @supabase/supabase-js</code></p>
+    </section>
+
+    <!-- Phase 2 -->
+    <section class="bg-gray-800 p-6 rounded-lg shadow-lg">
+        <h2 class="text-2xl font-semibold text-green-400 mb-4">Phase 2: Build the Main Dashboard UI</h2>
+        <p class="mb-4 text-gray-300">We will create a clean dashboard in <code class="bg-gray-700 px-2 py-1 rounded">src/app/page.tsx</code> to log your daily metrics easily.</p>
+        <ul class="list-disc list-inside space-y-2 text-gray-300">
+            <li><strong>Weight Input Component:</strong> A simple number input that saves your morning weight (target: break 99kg!).</li>
+            <li><strong>Sleep Tracker Component:</strong> A slider or input to log hours slept (target: 7-8 hours).</li>
+            <li><strong>Fasting Timer (Optional):</strong> A simple state-driven timer to track your 7:00 PM to 11:00 AM fasting window.</li>
+        </ul>
+    </section>
+
+    <!-- Phase 3 -->
+    <section class="bg-gray-800 p-6 rounded-lg shadow-lg">
+        <h2 class="text-2xl font-semibold text-green-400 mb-4">Phase 3: The Gym Tracker (Workout A/B)</h2>
+        <p class="mb-4 text-gray-300">A dedicated page (<code class="bg-gray-700 px-2 py-1 rounded">/gym</code>) to track your alternating workouts.</p>
+        <ul class="list-disc list-inside space-y-2 text-gray-300">
+            <li>Create a toggle or auto-selector for "Workout A" vs "Workout B".</li>
+            <li>Map through an array of exercises based on the selection (e.g., Leg Press, Chest Press).</li>
+            <li>Inputs for Sets, Reps, and Weight for progressive overload tracking.</li>
+        </ul>
+    </section>
+
+    <!-- Footer -->
+    <footer class="text-center text-gray-500 pt-8">
+        <p>Ready to code? Ping me and say <strong>"Let's build the Supabase connection"</strong> or <strong>"Let's write the Dashboard UI"</strong> when you return.</p>
+    </footer>
+
+</div>
+
+</body>
+</html>
