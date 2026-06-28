@@ -1,97 +1,216 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Loader2, Plus, Calendar, Activity, Info } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Loader2, Play, Square, Check, Flame, Info, ShieldAlert } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recharts";
 
-type WeightLog = {
-    log_date: string;
-    weight_kg: number;
-};
-
-type BloodTest = {
-    id: string;
-    test_date: string;
-    fasting_insulin: number;
-    fasting_glucose: number;
-    hba1c: number;
-    triglycerides: number;
-    hdl: number;
-};
-
-export default function MetricsTracker() {
-    const [activeTab, setActiveTab] = useState<"weight" | "blood">("weight");
-    const [weightHistory, setWeightHistory] = useState<WeightLog[]>([]);
-    const [bloodHistory, setBloodHistory] = useState<BloodTest[]>([]);
+export default function NutritionTracker() {
+    const [isFasting, setIsFasting] = useState(false);
+    const [fastId, setFastId] = useState<string | null>(null);
+    const [startTime, setStartTime] = useState<Date | null>(null);
+    const [elapsedSeconds, setElapsedSeconds] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
 
-    // Blood Input Modal State
-    const [showModal, setShowModal] = useState(false);
-    const [insulin, setInsulin] = useState("");
-    const [glucose, setGlucose] = useState("");
-    const [hba1c, setHba1c] = useState("");
-    const [triglycerides, setTriglycerides] = useState("");
-    const [hdl, setHdl] = useState("");
-    const [testDate, setTestDate] = useState(new Date().toISOString().split("T")[0]);
+    // Nutrient Sequencing checklist states
+    const [meal1Fiber, setMeal1Fiber] = useState(false);
+    const [meal1Protein, setMeal1Protein] = useState(false);
+    const [meal1Carbs, setMeal1Carbs] = useState(false);
 
+    const [meal2Fiber, setMeal2Fiber] = useState(false);
+    const [meal2Protein, setMeal2Protein] = useState(false);
+    const [meal2Carbs, setMeal2Carbs] = useState(false);
+
+    const timerRef = useRef<NodeJS.Timeout | null>(null);
+    const TARGET_FAST_HOURS = 16;
+    const TARGET_FAST_SECONDS = TARGET_FAST_HOURS * 3600;
+
+    // 1. FETCH ACTIVE FAST AND CHECKLIST ON MOUNT
     useEffect(() => {
-        async function fetchMetrics() {
-            // 1. Fetch weight logs
-            const { data: weightData } = await supabase
-                .from("daily_logs")
-                .select("log_date, weight_kg")
-                .not("weight_kg", "is", null)
-                .order("log_date", { ascending: true });
+        async function initData() {
+            const today = new Date().toISOString().split("T")[0];
 
-            // 2. Fetch blood tests
-            const { data: bloodData } = await supabase
-                .from("blood_tests")
+            const { data: fastData } = await supabase
+                .from("fasting_logs")
                 .select("*")
-                .order("test_date", { ascending: false });
+                .eq("is_active", true)
+                .maybeSingle();
 
-            if (weightData) setWeightHistory(weightData as WeightLog[]);
-            if (bloodData) setBloodHistory(bloodData as BloodTest[]);
+            if (fastData) {
+                setIsFasting(true);
+                setFastId(fastData.id);
+                const start = new Date(fastData.start_time);
+                setStartTime(start);
+                setElapsedSeconds(Math.floor((new Date().getTime() - start.getTime()) / 1000));
+            }
+
+            const { data: logData } = await supabase
+                .from("daily_logs")
+                .select("notes")
+                .eq("log_date", today)
+                .maybeSingle();
+
+            if (logData && logData.notes) {
+                try {
+                    const parsed = JSON.parse(logData.notes);
+                    if (parsed.sequencing) {
+                        setMeal1Fiber(parsed.sequencing.m1_fiber || false);
+                        setMeal1Protein(parsed.sequencing.m1_protein || false);
+                        setMeal1Carbs(parsed.sequencing.m1_carbs || false);
+                        setMeal2Fiber(parsed.sequencing.m2_fiber || false);
+                        setMeal2Protein(parsed.sequencing.m2_protein || false);
+                        setMeal2Carbs(parsed.sequencing.m2_carbs || false);
+                    }
+                } catch (_) {}
+            }
             setIsLoading(false);
         }
-        fetchMetrics();
+        initData();
     }, []);
 
-    const handleSaveBlood = async (e: React.FormEvent) => {
-        e.preventDefault();
-        const newTest = {
-            test_date: testDate,
-            fasting_insulin: parseFloat(insulin),
-            fasting_glucose: parseFloat(glucose),
-            hba1c: parseFloat(hba1c),
-            triglycerides: parseFloat(triglycerides),
-            hdl: parseFloat(hdl),
+    // 2. LIVE COUNTDOWN TIMER EFFECT
+    useEffect(() => {
+        if (isFasting && startTime) {
+            timerRef.current = setInterval(() => {
+                setElapsedSeconds(Math.floor((new Date().getTime() - startTime.getTime()) / 1000));
+            }, 1000);
+        } else {
+            if (timerRef.current) clearInterval(timerRef.current);
+        }
+        return () => {
+            if (timerRef.current) clearInterval(timerRef.current);
         };
+    }, [isFasting, startTime]);
 
-        const { data, error } = await supabase.from("blood_tests").insert([newTest]).select().single();
+    // 3. START FASTING
+    const handleStartFast = async () => {
+        const now = new Date();
+        const { data, error } = await supabase
+            .from("fasting_logs")
+            .insert([{ start_time: now.toISOString(), is_active: true }])
+            .select()
+            .single();
 
         if (error) {
-            alert("Failed to save blood panel!");
-        } else if (data) {
-            setBloodHistory([data, ...bloodHistory]);
-            setShowModal(false);
-            // Reset fields
-            setInsulin(""); setGlucose(""); setHba1c(""); setTriglycerides(""); setHdl("");
+            alert("Failed to start fast.");
+            return;
+        }
+
+        setFastId(data.id);
+        setStartTime(now);
+        setIsFasting(true);
+        setElapsedSeconds(0);
+    };
+
+    // 4. STOP FASTING
+    const handleStopFast = async () => {
+        if (!fastId || !startTime) return;
+
+        const now = new Date();
+        const totalHours = parseFloat((Math.floor((now.getTime() - startTime.getTime()) / 1000) / 3600).toFixed(2));
+
+        const { error } = await supabase
+            .from("fasting_logs")
+            .update({
+                end_time: now.toISOString(),
+                is_active: false,
+                total_hours: totalHours,
+            })
+            .eq("id", fastId);
+
+        if (error) {
+            alert("Failed to save fasting session.");
+            return;
+        }
+
+        alert(`Fasting Completed! Total hours: ${totalHours}h 🥳`);
+        setIsFasting(false);
+        setFastId(null);
+        setStartTime(null);
+        setElapsedSeconds(0);
+    };
+
+    // 5. UPDATE CHECKLIST
+    const handleToggleCheck = async (meal: 1 | 2, type: "fiber" | "protein" | "carbs", currentVal: boolean) => {
+        const today = new Date().toISOString().split("T")[0];
+        const newVal = !currentVal;
+
+        let m1f = meal1Fiber, m1p = meal1Protein, m1c = meal1Carbs;
+        let m2f = meal2Fiber, m2p = meal2Protein, m2c = meal2Carbs;
+
+        if (meal === 1) {
+            if (type === "fiber") { setMeal1Fiber(newVal); m1f = newVal; }
+            if (type === "protein") { setMeal1Protein(newVal); m1p = newVal; }
+            if (type === "carbs") { setMeal1Carbs(newVal); m1c = newVal; }
+        } else {
+            if (type === "fiber") { setMeal2Fiber(newVal); m2f = newVal; }
+            if (type === "protein") { setMeal2Protein(newVal); m2p = newVal; }
+            if (type === "carbs") { setMeal2Carbs(newVal); m2c = newVal; }
+        }
+
+        const sequencingPayload = {
+            sequencing: {
+                m1_fiber: m1f, m1_protein: m1p, m1_carbs: m1c,
+                m2_fiber: m2f, m2_protein: m2p, m2_carbs: m2c
+            }
+        };
+
+        await supabase
+            .from("daily_logs")
+            .upsert({ log_date: today, notes: JSON.stringify(sequencingPayload) }, { onConflict: "log_date" });
+    };
+
+    // 💡 NEW: CALCUATE LIVE METABOLIC STAGES
+    const getMetabolicStage = (seconds: number) => {
+        if (!isFasting) return { name: "Not Fasting", color: "text-gray-500", desc: "Start fasting to trigger a metabolic refactor." };
+
+        const hours = seconds / 3600;
+        if (hours < 4) {
+            return {
+                name: "Anabolic Stage",
+                color: "text-blue-400",
+                desc: "Digesting food. Blood sugar is elevated and insulin is storing glycogen."
+            };
+        } else if (hours < 8) {
+            return {
+                name: "Catabolic Stage",
+                color: "text-yellow-400",
+                desc: "Blood sugar returning to normal. Liver is breaking down stored glycogen."
+            };
+        } else if (hours < 12) {
+            return {
+                name: "Fat Burning Switch",
+                color: "text-orange-400",
+                desc: "Glycogen running low. Insulin drops to baseline, allowing fat mobilize."
+            };
+        } else if (hours < 16) {
+            return {
+                name: "Active Ketosis",
+                color: "text-[#00FFFF] drop-shadow-[0_0_8px_rgba(0,255,255,0.4)]",
+                desc: "Optimal insulin sensitivity. Cells are burning stored body fat for fuel!"
+            };
+        } else {
+            return {
+                name: "Autophagy & Cleansing",
+                color: "text-purple-400",
+                desc: "Cellular rejuvenation active. Body is clearing out old protein fragments."
+            };
         }
     };
 
-    // Helper: Calculate HOMA-IR (Fasting Insulin * Fasting Glucose / 22.5)
-    const calculateHomaIR = (insulin: number, glucose: number) => {
-        if (!insulin || !glucose) return null;
-        return ((insulin * glucose) / 22.5).toFixed(2);
-    };
+    const currentStage = getMetabolicStage(elapsedSeconds);
 
-    // Helper: Optimal Marker Checks
-    const getMarkerStatus = (val: number, type: "insulin" | "homa" | "hba1c") => {
-        if (type === "insulin") return val < 6.0 ? "text-[#00FFFF]" : "text-yellow-500";
-        if (type === "homa") return val < 1.0 ? "text-[#00FFFF]" : val > 1.9 ? "text-red-500" : "text-yellow-500";
-        if (type === "hba1c") return val < 5.7 ? "text-[#00FFFF]" : val >= 6.5 ? "text-red-500" : "text-yellow-500";
-        return "text-white";
+    // Circular math
+    const radius = 80;
+    const strokeWidth = 8;
+    const circumference = 2 * Math.PI * radius;
+    const progressPercent = Math.min(100, (elapsedSeconds / TARGET_FAST_SECONDS) * 100);
+    const strokeDashoffset = circumference - (progressPercent / 100) * circumference;
+
+    const formatElapsedTime = (secs: number) => {
+        const h = Math.floor(secs / 3600);
+        const m = Math.floor((secs % 3600) / 60);
+        const s = secs % 60;
+        return `${h < 10 ? "0" : ""}${h}:${m < 10 ? "0" : ""}${m}:${s < 10 ? "0" : ""}${s}`;
     };
 
     if (isLoading) {
@@ -102,246 +221,122 @@ export default function MetricsTracker() {
         );
     }
 
-    // Calculate latest weight metrics
-    const latestWeight = weightHistory[weightHistory.length - 1]?.weight_kg || 110.0;
-    const startWeight = 110.0;
-    const progressPercent = Math.min(100, Math.max(0, ((startWeight - latestWeight) / (startWeight - 99.0)) * 100));
-
     return (
         <main className="min-h-screen p-4 pb-28 text-white bg-black">
             <header className="mb-6 mt-4">
-                <h1 className="text-3xl font-bold tracking-tight">Body & <span className="text-[#00FFFF]">Blood</span></h1>
-                <p className="text-gray-400 text-sm mt-1">Track your biochemical transformation</p>
+                <h1 className="text-3xl font-bold tracking-tight">Intake & <span className="text-[#00FFFF]">Fasting</span></h1>
+                <p className="text-gray-400 text-sm mt-1">Control your metabolic entry points</p>
             </header>
 
-            {/* Sub Tabs */}
-            <div className="flex bg-gray-900 rounded-xl p-1 mb-6 border border-gray-800">
+            {/* --- FASTING TIMER CARD --- */}
+            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-lg flex flex-col items-center mb-6">
+
+                {/* Dynamic Stage Indicator Badge */}
+                <div className="mb-4">
+          <span className={`text-xs font-bold uppercase tracking-widest px-3 py-1.5 rounded-full bg-black border border-gray-850 ${currentStage.color}`}>
+            {currentStage.name}
+          </span>
+                </div>
+
+                {/* Circular Progress Wheel */}
+                <div className="relative flex items-center justify-center h-48 w-48 mb-4">
+                    <svg className="absolute transform -rotate-90 w-full h-full">
+                        <circle cx="96" cy="96" r={radius} className="stroke-gray-800" strokeWidth={strokeWidth} fill="transparent" />
+                        <circle
+                            cx="96" cy="96" r={radius}
+                            className="stroke-[#00FFFF] transition-all duration-300"
+                            strokeWidth={strokeWidth}
+                            fill="transparent"
+                            strokeDasharray={circumference}
+                            strokeDashoffset={strokeDashoffset}
+                            strokeLinecap="round"
+                        />
+                    </svg>
+                    <div className="text-center z-10">
+                        <p className="text-3xl font-mono font-bold tracking-widest text-white">{formatElapsedTime(elapsedSeconds)}</p>
+                        <p className="text-[10px] text-gray-500 mt-1">Goal: {TARGET_FAST_HOURS}h ({(progressPercent).toFixed(0)}%)</p>
+                    </div>
+                </div>
+
+                {/* Dynamic Stage Description */}
+                <p className="text-center text-xs text-gray-400 max-w-sm mb-6 px-4 leading-relaxed italic">
+                    "{currentStage.desc}"
+                </p>
+
+                {/* Start / Stop Button */}
                 <button
-                    onClick={() => setActiveTab("weight")}
-                    className={`flex-1 py-3 text-sm font-bold rounded-lg transition-all ${
-                        activeTab === "weight" ? "bg-[#00FFFF] text-black" : "text-gray-400"
+                    onClick={isFasting ? handleStopFast : handleStartFast}
+                    className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-all ${
+                        isFasting
+                            ? "bg-red-500 hover:bg-red-600 text-white"
+                            : "bg-[#00FFFF] hover:bg-cyan-400 text-black shadow-[0_4px_15px_rgba(0,255,255,0.3)]"
                     }`}
                 >
-                    Scale Progress
-                </button>
-                <button
-                    onClick={() => setActiveTab("blood")}
-                    className={`flex-1 py-3 text-sm font-bold rounded-lg transition-all ${
-                        activeTab === "blood" ? "bg-[#00FFFF] text-black" : "text-gray-400"
-                    }`}
-                >
-                    Lab Panels
+                    {isFasting ? <><Square size={20} /> Stop Fasting Session</> : <><Play size={20} /> Start Fasting Window</>}
                 </button>
             </div>
 
-            {/* --- SCALE WEIGHT PANEL --- */}
-            {activeTab === "weight" && (
-                <div className="space-y-6">
-                    {/* Milestone Target Card */}
-                    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 shadow-lg">
-                        <div className="flex justify-between items-center mb-4">
-                            <div>
-                                <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Current Weight</span>
-                                <h2 className="text-3xl font-bold mt-1">{latestWeight} <span className="text-sm text-gray-500">kg</span></h2>
-                            </div>
-                            <div className="text-right">
-                                <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">First Goal</span>
-                                <h2 className="text-xl font-bold mt-1 text-[#00FFFF]">99.0 kg</h2>
-                            </div>
-                        </div>
+            {/* --- NUTRIENT SEQUENCING CHECKLIST --- */}
+            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 shadow-lg space-y-4">
+                <h2 className="text-sm font-semibold uppercase text-gray-400 tracking-wider border-b border-gray-800 pb-3 flex items-center gap-1.5">
+                    <Flame className="text-[#00FFFF]" size={18} /> Nutrient Sequencing (Checklist)
+                </h2>
 
-                        {/* Progress Bar */}
-                        <div className="w-full bg-black rounded-full h-3 border border-gray-800 overflow-hidden">
-                            <div
-                                className="bg-[#00FFFF] h-full rounded-full transition-all duration-500 shadow-[0_0_10px_rgba(0,255,255,0.5)]"
-                                style={{ width: `${progressPercent}%` }}
-                            ></div>
-                        </div>
-                        <p className="text-[10px] text-gray-500 mt-2 text-right">
-                            {progressPercent.toFixed(0)}% of the way to double digits!
-                        </p>
-                    </div>
+                <div className="bg-[#00FFFF]/5 border border-[#00FFFF]/20 rounded-xl p-3.5 flex gap-2 text-xs text-gray-300">
+                    <Info className="text-[#00FFFF] shrink-0" size={16} />
+                    <p>Always eat your fiber first to coat your gut, protein second to trigger satiety, and carbohydrates last to blunt glucose spikes.</p>
+                </div>
 
-                    {/* Chart Card */}
-                    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 shadow-lg">
-                        <h3 className="text-sm font-semibold text-gray-400 mb-4">Weight Trend</h3>
-                        <div className="h-64 w-full">
-                            {weightHistory.length === 0 ? (
-                                <div className="h-full flex items-center justify-center text-gray-600 italic">
-                                    Log your morning weight on the dashboard to build trends
-                                </div>
-                            ) : (
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <LineChart data={weightHistory}>
-                                        <XAxis dataKey="log_date" stroke="#4b5563" fontSize={11} tickLine={false} />
-                                        <YAxis domain={['auto', 'auto']} stroke="#4b5563" fontSize={11} tickLine={false} />
-                                        <Tooltip contentStyle={{ backgroundColor: "#111827", borderColor: "#1f2937", borderRadius: "10px" }} />
-                                        <Line
-                                            type="monotone"
-                                            dataKey="weight_kg"
-                                            stroke="#00FFFF"
-                                            strokeWidth={3}
-                                            dot={{ fill: "#00FFFF", r: 4 }}
-                                        />
-                                    </LineChart>
-                                </ResponsiveContainer>
-                            )}
-                        </div>
+                {/* Meal 1 */}
+                <div className="space-y-2 pt-2">
+                    <h3 className="text-sm font-bold text-white">Meal 1: Break-Fast (11:00 AM)</h3>
+                    <div className="grid grid-cols-3 gap-2">
+                        {[
+                            { label: "1. Fiber", key: "fiber", state: meal1Fiber },
+                            { label: "2. Protein", key: "protein", state: meal1Protein },
+                            { label: "3. Carbs", key: "carbs", state: meal1Carbs }
+                        ].map((item) => (
+                            <button
+                                key={item.key}
+                                type="button"
+                                onClick={() => handleToggleCheck(1, item.key as any, item.state)}
+                                className={`py-2.5 px-1 rounded-lg text-xs font-bold transition-all border flex items-center justify-center gap-1 ${
+                                    item.state
+                                        ? "bg-[#00FFFF]/10 border-[#00FFFF] text-[#00FFFF]"
+                                        : "bg-black border-gray-800 text-gray-500 hover:border-gray-600"
+                                }`}
+                            >
+                                {item.state && <Check size={12} />} {item.label}
+                            </button>
+                        ))}
                     </div>
                 </div>
-            )}
 
-            {/* --- BLOOD PANELS --- */}
-            {activeTab === "blood" && (
-                <div className="space-y-6">
-                    {/* Info Card */}
-                    <div className="bg-[#00FFFF]/5 border border-[#00FFFF]/20 rounded-2xl p-4 flex gap-3 text-sm">
-                        <Info className="text-[#00FFFF] shrink-0" size={20} />
-                        <p className="text-gray-300 leading-relaxed">
-                            Target a <strong className="text-white">Fasting Insulin &lt; 6.0 uIU/mL</strong> and a <strong className="text-white">HOMA-IR &lt; 1.0</strong> to indicate optimal metabolic flexibility and reversed resistance.
-                        </p>
-                    </div>
-
-                    {/* Log List */}
-                    <div className="space-y-4">
-                        {bloodHistory.map((test) => {
-                            const homa = calculateHomaIR(test.fasting_insulin, test.fasting_glucose);
-                            return (
-                                <div key={test.id} className="bg-gray-900 border border-gray-800 rounded-2xl p-5 shadow-lg">
-                                    <div className="flex items-center gap-3 border-b border-gray-800 pb-3 mb-4">
-                                        <Calendar size={18} className="text-[#00FFFF]" />
-                                        <span className="font-bold text-sm">
-                      {new Date(test.test_date).toLocaleDateString("en-GB", { month: "long", year: "numeric" })}
-                    </span>
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="bg-black/40 border border-gray-800/80 rounded-xl p-3">
-                                            <span className="text-[10px] uppercase text-gray-500 tracking-wider">Fasting Insulin</span>
-                                            <p className={`text-xl font-mono font-bold mt-1 ${getMarkerStatus(test.fasting_insulin, "insulin")}`}>
-                                                {test.fasting_insulin} <span className="text-xs font-sans text-gray-500">uIU/mL</span>
-                                            </p>
-                                        </div>
-
-                                        <div className="bg-black/40 border border-gray-800/80 rounded-xl p-3">
-                                            <span className="text-[10px] uppercase text-gray-500 tracking-wider">HOMA-IR</span>
-                                            <p className={`text-xl font-mono font-bold mt-1 ${homa ? getMarkerStatus(parseFloat(homa), "homa") : "text-white"}`}>
-                                                {homa || "N/A"}
-                                            </p>
-                                        </div>
-
-                                        <div className="bg-black/40 border border-gray-800/80 rounded-xl p-3">
-                                            <span className="text-[10px] uppercase text-gray-500 tracking-wider">HbA1c</span>
-                                            <p className={`text-xl font-mono font-bold mt-1 ${getMarkerStatus(test.hba1c, "hba1c")}`}>
-                                                {test.hba1c}%
-                                            </p>
-                                        </div>
-
-                                        <div className="bg-black/40 border border-gray-800/80 rounded-xl p-3">
-                                            <span className="text-[10px] uppercase text-gray-500 tracking-wider">TG / HDL Ratio</span>
-                                            <p className="text-xl font-mono font-bold mt-1 text-white">
-                                                {(test.triglycerides / test.hdl).toFixed(1)}
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-                            );
-                        })}
-
-                        {bloodHistory.length === 0 && (
-                            <div className="text-center py-10 bg-gray-900 rounded-2xl border border-gray-800">
-                                <p className="text-gray-500">No blood panels logged yet.</p>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Floating action button to open Input Form Modal */}
-                    <button
-                        onClick={() => setShowModal(true)}
-                        className="fixed bottom-24 right-4 bg-[#00FFFF] text-black p-4 rounded-full shadow-[0_4px_20px_rgba(0,255,255,0.4)] z-40 hover:scale-105 active:scale-95 transition-all"
-                    >
-                        <Plus size={24} />
-                    </button>
-                </div>
-            )}
-
-            {/* --- LOG BLOOD INPUT MODAL --- */}
-            {showModal && (
-                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-                    <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md p-6 overflow-y-auto max-h-[90vh]">
-                        <h3 className="text-xl font-bold mb-4 border-b border-gray-800 pb-2">Log Blood Results</h3>
-
-                        <form onSubmit={handleSaveBlood} className="space-y-4">
-                            <div>
-                                <label className="block text-xs text-gray-400 mb-1">Test Date</label>
-                                <input
-                                    type="date"
-                                    value={testDate}
-                                    onChange={(e) => setTestDate(e.target.value)}
-                                    className="w-full bg-black border border-gray-700 rounded-lg p-3 text-white focus:border-[#00FFFF] focus:outline-none"
-                                    required
-                                />
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-xs text-gray-400 mb-1">Fasting Insulin (uIU/mL)</label>
-                                    <input
-                                        type="number" step="0.1" value={insulin} onChange={(e) => setInsulin(e.target.value)}
-                                        placeholder="e.g. 5.5" className="w-full bg-black border border-gray-700 rounded-lg p-3 text-white focus:border-[#00FFFF] focus:outline-none" required
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs text-gray-400 mb-1">Fasting Glucose (mg/dL)</label>
-                                    <input
-                                        type="number" step="1" value={glucose} onChange={(e) => setGlucose(e.target.value)}
-                                        placeholder="e.g. 85" className="w-full bg-black border border-gray-700 rounded-lg p-3 text-white focus:border-[#00FFFF] focus:outline-none" required
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-3 gap-2">
-                                <div>
-                                    <label className="block text-[10px] text-gray-400 mb-1">HbA1c (%)</label>
-                                    <input
-                                        type="number" step="0.1" value={hba1c} onChange={(e) => setHba1c(e.target.value)}
-                                        placeholder="5.4" className="w-full bg-black border border-gray-700 rounded-lg p-2 text-sm text-white focus:border-[#00FFFF] focus:outline-none" required
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-[10px] text-gray-400 mb-1">Triglycerides</label>
-                                    <input
-                                        type="number" step="1" value={triglycerides} onChange={(e) => setTriglycerides(e.target.value)}
-                                        placeholder="110" className="w-full bg-black border border-gray-700 rounded-lg p-2 text-sm text-white focus:border-[#00FFFF] focus:outline-none" required
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-[10px] text-gray-400 mb-1">HDL</label>
-                                    <input
-                                        type="number" step="1" value={hdl} onChange={(e) => setHdl(e.target.value)}
-                                        placeholder="45" className="w-full bg-black border border-gray-700 rounded-lg p-2 text-sm text-white focus:border-[#00FFFF] focus:outline-none" required
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="flex gap-3 pt-4">
-                                <button
-                                    type="button" onClick={() => setShowModal(false)}
-                                    className="flex-1 bg-gray-800 text-white p-3 rounded-xl hover:bg-gray-700 transition"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    className="flex-1 bg-[#00FFFF] text-black p-3 rounded-xl font-bold shadow-[0_4px_15px_rgba(0,255,255,0.3)] hover:bg-cyan-400 transition"
-                                >
-                                    Save Panel
-                                </button>
-                            </div>
-                        </form>
+                {/* Meal 2 */}
+                <div className="space-y-2 pt-4">
+                    <h3 className="text-sm font-bold text-white">Meal 2: Dinner (6:30 PM)</h3>
+                    <div className="grid grid-cols-3 gap-2">
+                        {[
+                            { label: "1. Fiber", key: "fiber", state: meal2Fiber },
+                            { label: "2. Protein", key: "protein", state: meal2Protein },
+                            { label: "3. Carbs", key: "carbs", state: meal2Carbs }
+                        ].map((item) => (
+                            <button
+                                key={item.key}
+                                type="button"
+                                onClick={() => handleToggleCheck(2, item.key as any, item.state)}
+                                className={`py-2.5 px-1 rounded-lg text-xs font-bold transition-all border flex items-center justify-center gap-1 ${
+                                    item.state
+                                        ? "bg-[#00FFFF]/10 border-[#00FFFF] text-[#00FFFF]"
+                                        : "bg-black border-gray-800 text-gray-500 hover:border-gray-600"
+                                }`}
+                            >
+                                {item.state && <Check size={12} />} {item.label}
+                            </button>
+                        ))}
                     </div>
                 </div>
-            )}
+            </div>
         </main>
     );
 }
