@@ -5,6 +5,7 @@ const withPWA = require('next-pwa')({
   register: true,
   skipWaiting: true,
   disable: process.env.NODE_ENV === 'development', // Disables PWA in dev mode so it doesn't cache heavily
+  swSrc: 'worker/index.js',
 });
 
 const nextConfig: NextConfig = {

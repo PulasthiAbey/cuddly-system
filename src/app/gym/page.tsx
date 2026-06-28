@@ -24,6 +24,14 @@ export default function GymTracker() {
     const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
     useEffect(() => {
+        if (typeof window !== "undefined" && "Notification" in window) {
+            if (Notification.permission !== "granted" && Notification.permission !== "denied") {
+                Notification.requestPermission();
+            }
+        }
+    }, []);
+
+    useEffect(() => {
         async function fetchTemplates() {
             const { data, error } = await supabase
                 .from("workout_templates")
@@ -41,18 +49,33 @@ export default function GymTracker() {
         fetchTemplates();
     }, []);
 
-    // Timer Countdown Logic
     useEffect(() => {
         if (timerActive && timerTime > 0) {
             timerIntervalRef.current = setInterval(() => {
                 setTimerTime((prev) => prev - 1);
             }, 1000);
-        } else if (timerTime === 0) {
+        } else if (timerTime === 0 && timerActive) {
+            // 1. Stop Timer
             setTimerActive(false);
             if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
-            // Play a native-sounding double vibration/beep if supported by mobile browser
+
+            // 2. Play Audio Alarm
+            if (typeof window !== "undefined") {
+                const audio = new Audio('/alarm.mp3');
+                audio.play().catch(e => console.log("Audio play blocked by iOS:", e));
+            }
+
+            // 3. Vibrate (if supported)
             if (typeof window !== "undefined" && "vibrate" in navigator) {
-                navigator.vibrate([200, 100, 200]);
+                navigator.vibrate([200, 100, 200, 100, 400]);
+            }
+
+            // 4. Trigger iOS Native Notification
+            if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+                new Notification("Rest Complete! ⏱️", {
+                    body: "Time for your next set. Let's build that glucose sink!",
+                    icon: "/app_icon.png",
+                });
             }
         }
 
@@ -180,6 +203,10 @@ export default function GymTracker() {
         const newCheckedState = !currentSets[index].checked;
         currentSets[index].checked = newCheckedState;
         setSetsData({ ...setsData, [exercise]: currentSets });
+
+        if (typeof window !== "undefined" && "Notification" in window && Notification.permission !== "granted") {
+            Notification.requestPermission();
+        }
 
         // 💡 MAGIC RULE: Auto-start a 90-second rest timer when checking off a set!
         if (newCheckedState) {
