@@ -1,3 +1,7 @@
+importScripts('https://storage.googleapis.com/workbox-cdn/releases/6.4.1/workbox-sw.js');
+
+workbox.precaching.precacheAndRoute(self.__WB_MANIFEST || []);
+
 self.addEventListener('push', function(event) {
     const data = event.data ? event.data.json() : {
         title: "Fasting Update! ⏱️",
@@ -19,7 +23,6 @@ self.addEventListener('push', function(event) {
 self.addEventListener('notificationclick', function(event) {
     event.notification.close();
 
-    // Bring the user directly to the nutrition tab of your PWA
     event.waitUntil(
         clients.matchAll({ type: 'window' }).then(function(clientList) {
             for (let i = 0; i < clientList.length; i++) {
