@@ -18,6 +18,7 @@ export const metadata: Metadata = {
     description: "Personal health, insulin, and gym tracker",
     manifest: '/manifest.json',
     icons: {
+        icon: '/app_icon.png',
         apple: '/app_icon.png',
     },
     appleWebApp: {
