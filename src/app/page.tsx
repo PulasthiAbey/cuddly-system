@@ -1,65 +1,98 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useState } from "react";
+// import { supabase } from "@/lib/supabase"; // We will uncomment this when we wire up the submit function
+
+export default function Dashboard() {
+  const [weight, setWeight] = useState("");
+  const [sleep, setSleep] = useState("");
+  const [workout, setWorkout] = useState("Rest");
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    console.log("Submitting:", { weight, sleep, workout });
+    // TODO: Add Supabase insert logic here next
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+      <main className="min-h-screen bg-black text-white p-6 pb-24">
+        {/* Header */}
+        <header className="mb-8 pt-8 border-b border-gray-800 pb-4">
+          <h1 className="text-3xl font-bold tracking-tight">
+            Metabolic <span className="text-[#00FFFF]">Refactor</span>
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+          <p className="text-gray-400 text-sm mt-1">Daily Biometrics Logger</p>
+        </header>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+
+          {/* Weight Input */}
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 shadow-lg">
+            <label className="block text-sm font-medium text-gray-400 mb-2">
+              Morning Weight (kg)
+            </label>
+            <div className="flex items-center">
+              <input
+                  type="number"
+                  step="0.1"
+                  value={weight}
+                  onChange={(e) => setWeight(e.target.value)}
+                  placeholder="110.0"
+                  className="w-full bg-black border border-gray-700 rounded-lg py-3 px-4 text-xl font-semibold text-white focus:outline-none focus:border-[#00FFFF] focus:ring-1 focus:ring-[#00FFFF] transition-colors"
+                  required
+              />
+            </div>
+            <p className="text-xs text-gray-500 mt-2">Target Milestone: 99.0 kg</p>
+          </div>
+
+          {/* Sleep Input */}
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 shadow-lg">
+            <label className="block text-sm font-medium text-gray-400 mb-2">
+              Sleep (Hours)
+            </label>
+            <input
+                type="number"
+                step="0.5"
+                value={sleep}
+                onChange={(e) => setSleep(e.target.value)}
+                placeholder="7.5"
+                className="w-full bg-black border border-gray-700 rounded-lg py-3 px-4 text-xl font-semibold text-white focus:outline-none focus:border-[#00FFFF] focus:ring-1 focus:ring-[#00FFFF] transition-colors"
+                required
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+            <p className="text-xs text-gray-500 mt-2">Optimal: 7.5 - 8.0 hours</p>
+          </div>
+
+          {/* Workout Selector */}
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 shadow-lg">
+            <label className="block text-sm font-medium text-gray-400 mb-3">
+              Today's Plan
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              {["Workout A", "Workout B", "Active Recovery", "Rest"].map((type) => (
+                  <button
+                      key={type}
+                      type="button"
+                      onClick={() => setWorkout(type)}
+                      className={`py-3 px-2 rounded-lg text-sm font-medium transition-all ${
+                          workout === type
+                              ? "bg-[#00FFFF] text-black shadow-[0_0_15px_rgba(0,255,255,0.4)]"
+                              : "bg-black border border-gray-700 text-gray-300 hover:border-gray-500"
+                      }`}
+                  >
+                    {type}
+                  </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Submit Button */}
+          <button
+              type="submit"
+              className="w-full bg-white text-black text-lg font-bold py-4 rounded-xl mt-4 hover:bg-gray-200 transition-colors active:scale-[0.98]"
           >
-            Documentation
-          </a>
-        </div>
+            Save Daily Metrics
+          </button>
+        </form>
       </main>
-    </div>
   );
 }
